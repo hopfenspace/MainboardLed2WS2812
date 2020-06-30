@@ -8,6 +8,8 @@ Hardware design made by @Hafenhuhn, Software written by @M4GNV5.
 
 ## Hardware
 
+See [the EasyEDA project](https://easyeda.com/hafenhuhn/4pin-to-3-pin_copy) for the latest version.
+
 ![](schematic.svg)
 
 ![](pcb.jpg)

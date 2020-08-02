@@ -1,8 +1,8 @@
 #include <Adafruit_NeoPixel.h>
 
 #define PIN_INPUT_RED 35
-#define PIN_INPUT_GREEN 33
-#define PIN_INPUT_BLUE 32
+#define PIN_INPUT_GREEN 34
+#define PIN_INPUT_BLUE 33
 
 #define PWM_INSPECTION_RANGE 1024
 
@@ -109,6 +109,37 @@ void setup()
 	redPin.init(onRedChange);
 	greenPin.init(onGreenChange);
 	bluePin.init(onBlueChange);
+
+	uint32_t off = Adafruit_NeoPixel::Color(0, 0, 0);
+	for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+	{
+		pixels[i]->fill(off);
+		pixels[i]->show();
+	}
+
+	for(int i = 0; i < pixels[0]->numPixels(); i++)
+	{
+		uint32_t color = Adafruit_NeoPixel::Color(
+			(i % 7 + 1) & 1 ? 32 : 0,
+			(i % 7 + 1) & 2 ? 32 : 0,
+			(i % 7 + 1) & 4 ? 32 : 0
+		);
+
+		for(int j = 0; j < OUTPUT_PIN_COUNT; j++)
+		{
+			pixels[j]->setPixelColor(i, color);
+			pixels[j]->show();
+		}
+
+		delay(50);
+	}
+
+	delay(500);
+	for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+	{
+		pixels[i]->fill(off);
+		pixels[i]->show();
+	}
 }
 
 void loop()

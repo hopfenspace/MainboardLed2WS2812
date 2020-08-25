@@ -9,7 +9,7 @@
 #define PIN_INPUT_BLUE 33
 
 #define PWM_INSPECTION_RANGE 1024
-#define OUTPUT_PWM_FPS 200
+#define OUTPUT_PWM_FPS 120
 
 TaskHandle_t task1;
 TaskHandle_t task2;
@@ -115,11 +115,8 @@ void onRedChange() { redPin.onChange(); }
 void onGreenChange() { greenPin.onChange(); }
 void onBlueChange() { bluePin.onChange(); }
 
-void setMcpPinTiples(uint8_t state)
+inline void calculateABStates(uint8_t state, uint8_t &aState, uint8_t &bState)
 {
-	uint8_t aState = 0;
-	uint8_t bState = 0;
-
 	for(int i = 0; i < MCP_PIN_TRIPES_COUNT; i++)
 	{
 		uint8_t index = mcpPinTriples[i];
@@ -134,9 +131,20 @@ void setMcpPinTiples(uint8_t state)
 		else
 			aState |= mask;
 	}
+}
 
-	mcp.writePort(MCP23017Port::A, aState);
-	mcp.writePort(MCP23017Port::B, bState);
+void setMcpPinTiples(uint8_t state, uint8_t times = 3)
+{
+	uint8_t aState = 0;
+	uint8_t bState = 0;
+
+	calculateABStates(state, aState, bState);
+
+	for(int i = 0; i < times; i++)
+	{
+		mcp.writePort(MCP23017Port::A, aState);
+		mcp.writePort(MCP23017Port::B, bState);
+	}
 }
 
 void pwmLedWorker(void *param)
@@ -174,7 +182,7 @@ void pwmLedWorker(void *param)
 			turnOffG = green * (1000000 / OUTPUT_PWM_FPS / 255);
 			turnOffB = blue * (1000000 / OUTPUT_PWM_FPS / 255);
 
-			setMcpPinTiples(colorTriple);
+			setMcpPinTiples(colorTriple, 5);
 			lastUpdate = nowFrame;
 		}
 
@@ -186,9 +194,9 @@ void pwmLedWorker(void *param)
 		if(framePart < turnOffB)
 			newState |= 0b001;
 
-		if(newState != colorTriple || now - lastSet > 50)
+		if(newState != colorTriple)
 		{
-			setMcpPinTiples(newState);
+			setMcpPinTiples(colorTriple, 5);
 			colorTriple = newState;
 		}
 	}

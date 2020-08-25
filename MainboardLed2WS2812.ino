@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <WiFi.h>
 #include <Wire.h>
 #include <Adafruit_NeoPixel.h>
 #include <MCP23017.h>
@@ -8,6 +9,10 @@
 #define PIN_INPUT_BLUE 33
 
 #define PWM_INSPECTION_RANGE 1024
+#define OUTPUT_PWM_FPS 200
+
+TaskHandle_t task1;
+TaskHandle_t task2;
 
 TwoWire I2CInstance = TwoWire(0);
 MCP23017 mcp = MCP23017(0x20, I2CInstance);
@@ -84,7 +89,7 @@ public:
 
 	uint8_t getPower()
 	{
-		uint32_t maxAge = micros() - 500 * 1000;
+		uint32_t maxAge = micros() - 10 * 1000;
 
 		if(lastRising < maxAge)
 		{
@@ -134,9 +139,105 @@ void setMcpPinTiples(uint8_t state)
 	mcp.writePort(MCP23017Port::B, bState);
 }
 
+void pwmLedWorker(void *param)
+{
+	uint32_t lastUpdate = 0;
+
+	uint8_t colorTriple = 0b111;
+	uint32_t turnOffR = 0;
+	uint32_t turnOffG = 0;
+	uint32_t turnOffB = 0;
+
+	uint32_t lastSet = 0;
+
+	while(true)
+	{
+		uint32_t now = micros();
+		uint32_t nowFrame = now / (1000000 / OUTPUT_PWM_FPS);
+		uint32_t framePart = now % (1000000 / OUTPUT_PWM_FPS);
+
+		if(lastUpdate != nowFrame)
+		{
+			uint8_t red = redPin.getPower();
+			uint8_t green = greenPin.getPower();
+			uint8_t blue = bluePin.getPower();
+
+			colorTriple = 0;
+			if(red != 0)
+				colorTriple |= 0b010;
+			if(green != 0)
+				colorTriple |= 0b100;
+			if(blue != 0)
+				colorTriple |= 0b001;
+
+			turnOffR = red * (1000000 / OUTPUT_PWM_FPS / 255);
+			turnOffG = green * (1000000 / OUTPUT_PWM_FPS / 255);
+			turnOffB = blue * (1000000 / OUTPUT_PWM_FPS / 255);
+
+			setMcpPinTiples(colorTriple);
+			lastUpdate = nowFrame;
+		}
+
+		uint8_t newState = 0;
+		if(framePart < turnOffR)
+			newState |= 0b010;
+		if(framePart < turnOffG)
+			newState |= 0b100;
+		if(framePart < turnOffB)
+			newState |= 0b001;
+
+		if(newState != colorTriple || now - lastSet > 50)
+		{
+			setMcpPinTiples(newState);
+			colorTriple = newState;
+		}
+	}
+}
+
+void neoPixelWorker(void *param)
+{
+	uint32_t lastUpdate = 0;
+
+	uint32_t lastChange = 0;
+	uint32_t lastChangeColor = 0;
+	uint32_t activeColor = 0;
+
+	while(true)
+	{
+		uint8_t red = redPin.getPower();
+		uint8_t green = greenPin.getPower();
+		uint8_t blue = bluePin.getPower();
+		uint32_t color = Adafruit_NeoPixel::Color(red, green, blue);
+
+		uint32_t now = millis();
+		if(lastChangeColor != color)
+		{
+			lastChangeColor = color;
+			lastChange = now;
+		}
+
+		if(now - lastChange < 20 || color == activeColor)
+			continue;
+
+		Serial.print("state : ");
+		Serial.print(color, 16);
+		Serial.println();
+
+		for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+		{
+			pixels[i]->fill(color);
+			pixels[i]->show();
+		}
+
+		activeColor = color;
+	}
+}
+
 void setup()
 {
 	Serial.begin(115200);
+
+	WiFi.mode(WIFI_OFF);
 
 	I2CInstance.begin(21, 22, 100000);
 
@@ -147,11 +248,6 @@ void setup()
 	mcp.writeRegister(MCP23017Register::GPIO_B, 0x00);
 	mcp.writeRegister(MCP23017Register::IPOL_A, 0x00);
 	mcp.writeRegister(MCP23017Register::IPOL_B, 0x00);
-
-	setMcpPinTiples(0b111);
-	delay(3000);
-	setMcpPinTiples(0b000);
-	delay(3000);
 
 	for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
 		pixels[i]->begin();
@@ -181,12 +277,12 @@ void setup()
 			pixels[j]->show();
 		}
 
-		if((i & 7) == 0)
+		if((i & 31) == 0)
 			setMcpPinTiples(0b111);
-		else if((i & 7) == 4)
+		else if((i & 31) == 16)
 			setMcpPinTiples(0b000);
 
-		delay(50);
+		delay(10);
 	}
 
 	delay(500);
@@ -195,81 +291,13 @@ void setup()
 		pixels[i]->fill(off);
 		pixels[i]->show();
 	}
+
+	// callback, name, stackSize, parameter, proprity, task, core
+	xTaskCreatePinnedToCore(pwmLedWorker, "PWM_LED_Worker", 4096, NULL, 1, &task1, 0);
+	xTaskCreatePinnedToCore(neoPixelWorker, "NeoPixel_Worker", 4096, NULL, 1, &task2, 1);
 }
 
 void loop()
 {
-	static uint32_t lastUpdate = 0;
-	static uint32_t lastNeopixelUpdate = 0;
-
-	static uint8_t colorTriple = 0b111;
-	static uint32_t turnOffR = 0;
-	static uint32_t turnOffG = 0;
-	static uint32_t turnOffB = 0;
-
-	uint32_t now = micros();
-	uint32_t nowSec = millis() / 1000;
-	uint32_t nowFrame = now / (1000000 / 200);
-	uint32_t framePart = now % (1000000 / 200);
-
-	if(lastUpdate != nowFrame)
-	{
-		uint8_t red = redPin.getPower();
-		uint8_t green = greenPin.getPower();
-		uint8_t blue = bluePin.getPower();
-		uint32_t color = Adafruit_NeoPixel::Color(red, green, blue);
-
-		colorTriple = 0;
-		if(red != 0)
-			colorTriple |= 0b010;
-		if(green != 0)
-			colorTriple |= 0b100;
-		if(blue != 0)
-			colorTriple |= 0b001;
-
-		turnOffR = red * (1000000 / 200 / 255);
-		turnOffG = green * (1000000 / 200 / 255);
-		turnOffB = blue * (1000000 / 200 / 255);
-
-		if(nowFrame % 120 == 0)
-		{
-			Serial.print("state : ");
-			Serial.print(color, 16);
-			Serial.print(" ");
-			Serial.print(turnOffR);
-			Serial.print(" ");
-			Serial.print(turnOffG);
-			Serial.print(" ");
-			Serial.print(turnOffB);
-			Serial.println();
-		}
-
-		setMcpPinTiples(colorTriple);
-
-		if(nowSec != lastNeopixelUpdate)
-		{
-			for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
-			{
-				pixels[i]->fill(color);
-				pixels[i]->show();
-			}
-			lastNeopixelUpdate = nowSec;
-		}
-
-		lastUpdate = nowFrame;
-	}
-
-	uint8_t newState = 0;
-	if(framePart < turnOffR)
-		newState |= 0b010;
-	if(framePart < turnOffG)
-		newState |= 0b100;
-	if(framePart < turnOffB)
-		newState |= 0b001;
-
-	if(newState != colorTriple)
-	{
-		setMcpPinTiples(newState);
-		colorTriple = newState;
-	}
+	delay(1000);
 }

@@ -30,7 +30,7 @@ Adafruit_NeoPixel *pixels[] = {
 
 #define OUTPUT_PIN_COUNT (sizeof(pixels) / sizeof(*pixels))
 
-#define POWER_HISTORY_LEN 256
+#define POWER_HISTORY_LEN 1
 class LedInputPin
 {
 private:
@@ -200,6 +200,7 @@ void setup()
 void loop()
 {
 	static uint32_t lastUpdate = 0;
+	static uint32_t lastNeopixelUpdate = 0;
 
 	static uint8_t colorTriple = 0b111;
 	static uint32_t turnOffR = 0;
@@ -207,8 +208,9 @@ void loop()
 	static uint32_t turnOffB = 0;
 
 	uint32_t now = micros();
-	uint32_t nowFrame = now / (1000000 / 120);
-	uint32_t framePart = now % (1000000 / 120);
+	uint32_t nowSec = millis() / 1000;
+	uint32_t nowFrame = now / (1000000 / 200);
+	uint32_t framePart = now % (1000000 / 200);
 
 	if(lastUpdate != nowFrame)
 	{
@@ -221,20 +223,37 @@ void loop()
 		if(red != 0)
 			colorTriple |= 0b010;
 		if(green != 0)
-			colorTriple |= 0b001;
-		if(blue != 0)
 			colorTriple |= 0b100;
+		if(blue != 0)
+			colorTriple |= 0b001;
 
-		turnOffR = red * 130;
-		turnOffG = green * 130;
-		turnOffB = blue * 130;
+		turnOffR = red * (1000000 / 200 / 255);
+		turnOffG = green * (1000000 / 200 / 255);
+		turnOffB = blue * (1000000 / 200 / 255);
+
+		if(nowFrame % 120 == 0)
+		{
+			Serial.print("state : ");
+			Serial.print(color, 16);
+			Serial.print(" ");
+			Serial.print(turnOffR);
+			Serial.print(" ");
+			Serial.print(turnOffG);
+			Serial.print(" ");
+			Serial.print(turnOffB);
+			Serial.println();
+		}
 
 		setMcpPinTiples(colorTriple);
 
-		for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+		if(nowSec != lastNeopixelUpdate)
 		{
-			pixels[i]->fill(color);
-			pixels[i]->show();
+			for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+			{
+				pixels[i]->fill(color);
+				pixels[i]->show();
+			}
+			lastNeopixelUpdate = nowSec;
 		}
 
 		lastUpdate = nowFrame;
@@ -244,9 +263,9 @@ void loop()
 	if(framePart < turnOffR)
 		newState |= 0b010;
 	if(framePart < turnOffG)
-		newState |= 0b001;
+		newState |= 0b100;
 	if(framePart < turnOffB)
-		newState |= 0b10;
+		newState |= 0b001;
 
 	if(newState != colorTriple)
 	{

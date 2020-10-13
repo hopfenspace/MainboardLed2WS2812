@@ -18,12 +18,14 @@ Adafruit_NeoPixel pixels0(64, 4, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixels1(64, 5, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixels2(64, 18, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel pixels3(64, 19, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels4(4, 25, NEO_GRB + NEO_KHZ800);
 
 Adafruit_NeoPixel *pixels[] = {
 	&pixels0,
 	&pixels1,
 	&pixels2,
 	&pixels3,
+	&pixels4,
 };
 
 #define OUTPUT_PIN_COUNT (sizeof(pixels) / sizeof(*pixels))

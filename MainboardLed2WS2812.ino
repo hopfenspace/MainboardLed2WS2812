@@ -1,15 +1,23 @@
+#include <Arduino.h>
+#include <WiFi.h>
 #include <Adafruit_NeoPixel.h>
 
+/*
 #define PIN_INPUT_RED 35
 #define PIN_INPUT_GREEN 34
 #define PIN_INPUT_BLUE 33
+*/
+#define PIN_INPUT_RED 26
+#define PIN_INPUT_GREEN 27
+#define PIN_INPUT_BLUE 13
 
-#define PWM_INSPECTION_RANGE 1024
+TaskHandle_t task1;
+TaskHandle_t task2;
 
-Adafruit_NeoPixel pixels0(64, 19, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel pixels1(64, 21, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel pixels2(64, 22, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel pixels3(64, 23, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels0(64, 4, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels1(64, 5, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels2(64, 18, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels3(64, 19, NEO_GRB + NEO_KHZ800);
 
 Adafruit_NeoPixel *pixels[] = {
 	&pixels0,
@@ -18,9 +26,9 @@ Adafruit_NeoPixel *pixels[] = {
 	&pixels3,
 };
 
-#define OUTPUT_PIN_COUNT sizeof(pixels) / sizeof(*pixels)
+#define OUTPUT_PIN_COUNT (sizeof(pixels) / sizeof(*pixels))
 
-#define POWER_HISTORY_LEN 256
+#define POWER_HISTORY_LEN 1
 class LedInputPin
 {
 private:
@@ -74,7 +82,7 @@ public:
 
 	uint8_t getPower()
 	{
-		uint32_t maxAge = micros() - 500 * 1000;
+		uint32_t maxAge = micros() - 10 * 1000;
 
 		if(lastRising < maxAge)
 		{
@@ -103,6 +111,8 @@ void onBlueChange() { bluePin.onChange(); }
 void setup()
 {
 	Serial.begin(115200);
+	WiFi.mode(WIFI_OFF);
+
 	for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
 		pixels[i]->begin();
 
@@ -131,7 +141,7 @@ void setup()
 			pixels[j]->show();
 		}
 
-		delay(50);
+		delay(10);
 	}
 
 	delay(500);
@@ -144,18 +154,39 @@ void setup()
 
 void loop()
 {
-	uint32_t color = Adafruit_NeoPixel::Color(
-		redPin.getPower(),
-		greenPin.getPower(),
-		bluePin.getPower()
-	);
-	Serial.println(color, 16);
+	uint32_t lastUpdate = 0;
 
-	for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+	uint32_t lastChange = 0;
+	uint32_t lastChangeColor = 0;
+	uint32_t activeColor = 0;
+
+	while(true)
 	{
-		pixels[i]->fill(color);
-		pixels[i]->show();
-	}
+		uint8_t red = redPin.getPower();
+		uint8_t green = greenPin.getPower();
+		uint8_t blue = bluePin.getPower();
+		uint32_t color = Adafruit_NeoPixel::Color(red, green, blue);
 
-	delay(500);
+		uint32_t now = millis();
+		if(lastChangeColor != color)
+		{
+			lastChangeColor = color;
+			lastChange = now;
+		}
+
+		if(now - lastChange < 20 || color == activeColor)
+			continue;
+
+		Serial.print("state : ");
+		Serial.print(color, 16);
+		Serial.println();
+
+		for(int i = 0; i < OUTPUT_PIN_COUNT; i++)
+		{
+			pixels[i]->fill(color);
+			pixels[i]->show();
+		}
+
+		activeColor = color;
+	}
 }
